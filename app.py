@@ -1,5 +1,6 @@
 from chalice import Chalice
 import boto3
+import base64
 
 app = Chalice(app_name='reactathon-api')
 
@@ -14,7 +15,7 @@ def detect_text_handler(image, context):
 
     rekognition = boto3.client("rekognition", "us-west-2")
     response = rekognition.detect_text(Image={
-        "Bytes": image.encode()
+        "Bytes": base64.decodestring(image)
     })
 
     return {
