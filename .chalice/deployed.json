@@ -1,0 +1,12 @@
+{
+  "dev": {
+    "api_handler_name": "reactathon-api-dev",
+    "api_handler_arn": "arn:aws:lambda:us-west-2:495623715889:function:reactathon-api-dev",
+    "lambda_functions": {},
+    "backend": "api",
+    "chalice_version": "1.1.1",
+    "rest_api_id": "5eqxk53744",
+    "api_gateway_stage": "api",
+    "region": "us-west-2"
+  }
+}
