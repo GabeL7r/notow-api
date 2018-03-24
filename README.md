@@ -4,10 +4,10 @@ The NoTow backend is "serverless", running on Lambdas, with some assistance from
 
 ## Setup
 
-```sh
-$ pip install -r requirements.txt
-```
-
+1. Install dependencies
+    ```sh
+    $ pip install -r requirements.txt
+    ```
 1. Set up AWS credentials (see [Gabe](@gabel0287))
 
 ## Serve
