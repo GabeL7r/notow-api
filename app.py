@@ -1,29 +1,107 @@
-from chalice import Chalice
+from chalice import Chalice, Response
+from datetime import datetime
+import json, re
+
 
 app = Chalice(app_name='reactathon-api')
-
+app.debug = True
 
 @app.route('/')
 def index():
     return {'hello': 'world'}
 
+@app.route('/parse', methods=['POST'])
+def parse_handler():
+    request = app.current_request
+    data = []
+    if request.method == 'POST' and 'message' in request.json_body:
+        data = request.json_body['message']
+        date = request.json_body['time']
 
-# The view function above will return {"hello": "world"}
-# whenever you make an HTTP GET request to '/'.
-#
-# Here are a few more examples:
-#
-# @app.route('/hello/{name}')
-# def hello_name(name):
-#    # '/hello/james' -> {"hello": "james"}
-#    return {'hello': name}
-#
-# @app.route('/users', methods=['POST'])
-# def create_user():
-#     # This is the JSON body the user sent in their POST request.
-#     user_as_json = app.current_request.json_body
-#     # We'll echo the json body back to the user in a 'user' key.
-#     return {'user': user_as_json}
-#
-# See the README documentation for more examples.
-#
+        parse_sign(data, date)
+    else:
+        return Response(
+                    body={"error": "Message not provided!"},
+                    status_code=400,
+                    headers={'Content-Type': 'application/json'}
+                    )
+
+    return request.json_body
+
+def parse_sign(text, timestamp):
+    current_date = timestamp_to_datetime(timestamp)
+    common_days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
+    numeric_map = ['ZERO', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE']
+    common_minutes = [1, 2, 5, 10, 15, 20, 30]
+    time_denominations = ['MINUTE', 'HOUR']
+
+    time_range_regex = re.compile(r'^\d{1,2}[aA|pP][.]?[mM][.]?-\d{1,2}[aA|pP][.]?[mM][.]?$')
+
+    current_week_day = common_days[current_date.weekday()]
+
+    split_text = text.split('PARKING')
+    time_limit = split_text[0]
+    when_rule_is_valid = split_text[1]
+    parking_here_is_fine = True
+
+    does_rule_apply = compare_time_to_sign(current_date, when_rule_is_valid)
+
+    if does_rule_apply:
+        print("Rule applies!")
+    else:
+        print("Rule does not apply!")
+
+    return parking_here_is_fine
+
+def timestamp_to_datetime(timestamp):
+    return datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S.%f')
+
+# True/False, does the sign apply to the user given current time?
+def compare_time_to_sign(date, when_rule_is_valid):
+    common_days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
+    broad_statements = ['ANY', 'EVERY']
+
+    if not any(day in when_rule_is_valid for day in common_days):   # day is not specified
+        if any(statement in when_rule_is_valid for statement in broad_statements):
+            # the rule applies; day is not specified, and broad statement is being used
+            return True
+        else:
+            # the rule applies iff the user's current time fits within sign's specified range
+            return check_time_against_sign(date, when_rule_is_valid)
+    elif current_week_day in when_rule_is_valid:    # today is specified
+        # the rule applies iff the user's current time fits within sign's specified range
+        return check_time_against_sign(date, when_rule_is_valid)
+    else:
+        print("This sign specified a day or days, but did not specify today. It does not apply.")
+
+def check_time_against_sign(current_date, when_rule_is_valid):
+    time_delimeters = ['-', 'THRU', 'TO']
+
+    temp_regex_string = '[' + '|'.join(time_delimeters) + ']'
+    time_delimiter_regex = re.compile(r'{}'.format(temp_regex_string))
+    # Check times
+    time_range_strings = re.split(time_delimiter_regex, when_rule_is_valid)
+    time_range_strings = [time.strip(' ') for time in time_range_strings]   # Strip spaces
+
+    min_time = re.split('(\d+)', time_range_strings[0])[1:]
+    max_time = re.split('(\d+)', time_range_strings[1])[1:]
+
+    time_range_ints = [time_to_int(min_time), time_to_int(max_time)]
+
+    if time_range_ints[0] > time_range_ints[1]:
+        if current_date.hour >= time_range_ints[0] or current_date.hour <= time_range_ints[1]:
+            # the rule applies; range wraps around EoD, but user is still in range
+            return True
+    elif current_date.hour >= time_range_ints[0] and current_date.hour <= time_range_ints[1]:
+        # the rule applies; the user's current hour is between min and max
+        return True
+
+def time_to_int(time):
+    pm_regex = re.compile(r'[pP][.]?[mM][.]?')
+
+    if time[0] == '12' and not re.match(pm_regex, time[1]):
+        time[0] = 0
+    elif re.match(pm_regex, time[1]) and time[0] != '12':
+        time[0] = int(time[0]) + 12
+
+    return int(time[0])
