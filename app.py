@@ -14,44 +14,101 @@ def index():
 def parse_handler():
     request = app.current_request
     data = []
-    if request.method == 'POST' and 'message' in request.json_body:
-        data = request.json_body['message']
-        date = request.json_body['time']
 
-        parse_sign(data, date)
+    # print(request.raw_body)
+
+    if request.method == 'POST':
+        if 'message' in request.json_body:
+            if 'time' in request.json_body:
+                data = request.json_body['message']
+                date = request.json_body['time']
+
+                valid_parking = parse_sign(data, date)  # First element is "can I park here", second is "how long?"
+                if valid_parking[0]:
+                    final_time_limit = 0
+                    if valid_parking[1] == -1:
+                        final_time_limit = "all day"
+                    elif valid_parking[1] == 0:
+                        final_time_limit = "less than an hour"
+                    else:
+                        final_time_limit = "about " + str(valid_parking[1]) + " hour(s)"
+                    return Response(
+                                body={
+                                    "canPark": "true",
+                                    "details": final_time_limit
+                                },
+                                status_code=200,
+                                headers={'Content-Type': 'application/json'}
+                            )
+                else:
+                    return Response(
+                                body={
+                                    "canPark": "false",
+                                    "details": "no parking for you"
+                                },
+                                status_code=200,
+                                headers={'Content-Type': 'application/json'}
+                            )
+            else:
+                return Response(
+                            body={"error": "No 'time' provided"},
+                            status_code=400,
+                            headers={'Content-Type': 'application/json'}
+                        )
+        else:
+            return Response(
+                        body={"error": "No 'message' provided"},
+                        status_code=400,
+                        headers={'Content-Type': 'application/json'}
+                    )
     else:
         return Response(
-                    body={"error": "Message not provided!"},
+                    body={"error": "You did not POST"},
                     status_code=400,
                     headers={'Content-Type': 'application/json'}
-                    )
-
-    return request.json_body
+                )
 
 def parse_sign(text, timestamp):
     current_date = timestamp_to_datetime(timestamp)
-    common_days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
-    numeric_map = ['ZERO', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE']
     common_minutes = [1, 2, 5, 10, 15, 20, 30]
-    time_denominations = ['MINUTE', 'HOUR']
-
 
     split_text = text.split('PARKING')
     time_limit = split_text[0]
     when_rule_is_valid = split_text[1]
-    parking_here_is_fine = False
+    parking_here_is_fine = [False]
 
-    does_rule_apply = compare_time_to_sign(current_date, when_rule_is_valid)
+    if when_rule_is_valid != '':
+        does_rule_apply = compare_time_to_sign(current_date, when_rule_is_valid)
+    else:
+        does_rule_apply = [True, 0]
 
     if does_rule_apply[0]:
-        print("Rule applies!")
-        if time_limit == 'NO':
-            parking_here_is_fine = False
+        if 'NO' in time_limit:
+            parking_here_is_fine = [False, -1]  # False == don't park, regardless of second value
+        else:
+            parsed_limit = time_limit_split(time_limit)
+
+            if parsed_limit[0] <= does_rule_apply[1]:   # time before end of rule range is greater than time limit
+                parking_here_is_fine = [True, parsed_limit[0]]
+            else:   # time limit exceeds rule range, park as long as you want!
+                parking_here_is_fine = [True, -1]
     else:
-        print("Rule doesn't apply!")
-        parking_here_is_fine = True
+        parking_here_is_fine = [True, -1]   # True && value == park for N hours,
 
     return parking_here_is_fine
+
+def time_limit_split(time_limit):
+    numeric_map = ['ZERO', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE']
+    time_limit_list = time_limit.split(' ')
+
+    max_time = 0
+
+    if any(number in time_limit for number in numeric_map):
+        max_time = numeric_map.index(time_limit_list[0])
+    else:
+        max_time = int(time_limit_list[0])
+
+    return [max_time, time_limit_list[1]]
 
 def timestamp_to_datetime(timestamp):
     return datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S.%f')
@@ -59,7 +116,7 @@ def timestamp_to_datetime(timestamp):
 # True/False, does the sign apply to the user given current time?
 def compare_time_to_sign(current_date, when_rule_is_valid):
     common_days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
-    broad_statements = ['ANY', 'EVERY']
+    broad_statements = ['ANY', 'EVERY', 'DAY OR NIGHT']
     current_week_day = common_days[current_date.weekday()]
     # time_range_regex = re.compile(r'^\d{1,2}[aA|pP][.]?[mM][.]?-\d{1,2}[aA|pP][.]?[mM][.]?$')
     pm_regex = re.compile(r'[pP][.]?[mM][.]?')
@@ -99,12 +156,12 @@ def check_time_against_sign(current_date, when_rule_is_valid):
         if current_date.hour >= time_range_ints[0]: # if current time is after min...
             time_remaining = 24 - current_date.hour + time_range_ints[1]
             return [True, time_remaining]
-        if current_date.hour <= time_range_ints[1]: # if current time is before max...
+        if current_date.hour < time_range_ints[1]: # if current time is before max...
             # the rule applies; range wraps around EoD, but user is still in range
             time_remaining = time_range_ints[1] - current_date.hour
             return [True, time_remaining]
         return [False]
-    elif current_date.hour >= time_range_ints[0] and current_date.hour <= time_range_ints[1]:
+    elif current_date.hour >= time_range_ints[0] and current_date.hour < time_range_ints[1]:
         # the rule applies; the user's current hour is between min and max
         time_remaining = time_range_ints[1] - current_date.hour
         return [True, time_remaining]
