@@ -72,7 +72,14 @@ def parse_sign(text, timestamp):
     current_date = timestamp_to_datetime(timestamp)
     common_minutes = [1, 2, 5, 10, 15, 20, 30]
 
-    split_text = text.split('PARKING')
+    split_text = []
+    if 'PARKING' in text:
+        split_text = text.split('PARKING')
+    elif 'STOPPING' in text:
+        split_text = text.split('STOPPING')
+    else:
+        print("Could not find the word PARKING or STOPPING")
+
     time_limit = split_text[0]
     when_rule_is_valid = split_text[1]
     parking_here_is_fine = [False]
@@ -80,13 +87,13 @@ def parse_sign(text, timestamp):
     if when_rule_is_valid != '':
         does_rule_apply = compare_time_to_sign(current_date, when_rule_is_valid)
     else:
-        does_rule_apply = [True, 0]
+        does_rule_apply = [True, time_limit_split(time_limit)[0]]
 
     if does_rule_apply[0]:
         if 'NO' in time_limit:
             parking_here_is_fine = [False, -1]  # False == don't park, regardless of second value
         else:
-            parsed_limit = time_limit_split(time_limit)
+            parsed_limit = time_limit_split(time_limit) # [number, denomination of time]
 
             if parsed_limit[0] <= does_rule_apply[1]:   # time before end of rule range is greater than time limit
                 parking_here_is_fine = [True, parsed_limit[0]]
@@ -132,7 +139,7 @@ def compare_time_to_sign(current_date, when_rule_is_valid):
     elif current_week_day in when_rule_is_valid:    # today is specified
         if not re.search(am_regex, when_rule_is_valid) and not re.search(pm_regex, when_rule_is_valid):
             # the rule applies iff the user's current time fits within sign's specified range
-            return [True, 0]
+            return [True, -1]
         else:
             return check_time_against_sign(current_date, when_rule_is_valid.split(current_week_day, 1)[1])
     else:
@@ -141,7 +148,7 @@ def compare_time_to_sign(current_date, when_rule_is_valid):
 def check_time_against_sign(current_date, when_rule_is_valid):
     time_delimeters = ['-', 'THRU', 'TO']
 
-    temp_regex_string = '[' + '|'.join(time_delimeters) + ']'
+    temp_regex_string = '|'.join(time_delimeters)
     time_delimiter_regex = re.compile(r'{}'.format(temp_regex_string))
 
     # Check times
